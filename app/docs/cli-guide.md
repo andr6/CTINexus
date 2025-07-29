@@ -24,9 +24,10 @@ python app.py --input-file report.txt --model gpt-4o --embedding-model text-embe
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--text TEXT` | `-t` | Input threat intelligence text to process directly |
-| `--input-file FILE` | `-i` | Path to file containing threat intelligence text |
+| `--input-file FILE` | `-i` | Path to `.txt`, `.md`, or `.pdf` file |
+| `--url URL` |  | Fetch text from a remote URL |
 
-**Note**: `--text` and `--input-file` are mutually exclusive - use one or the other.
+**Note**: `--text`, `--input-file`, and `--url` are mutually exclusive - use only one.
 
 ### Model Selection
 
@@ -52,6 +53,15 @@ python app.py --input-file report.txt --model gpt-4o --embedding-model text-embe
 - `amazon.nova-micro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-pro-v1:0`
 - `deepseek.r1-v1:0`, `mistral.pixtral-large-2502-v1:0`
 - Meta Llama models: `meta.llama3-1-8b-instruct-v1:0`, etc.
+
+**Claude Models:**
+- `claude-3-opus-20240229`, `claude-3-sonnet-20240229`, `claude-3-haiku-20240307`
+
+**Perplexity Models:**
+- `pplx-70b-online`, `pplx-7b-online`
+
+**Ollama Models:**
+- `llama2`, `mixtral`
 
 ### Fine-Grained Model Control
 
@@ -104,6 +114,15 @@ python app.py -i report.txt --provider Gemini
 
 # Use AWS Claude
 python app.py -i report.txt --provider AWS --model anthropic.claude-3-5-sonnet
+
+# Use Claude API directly
+python app.py -i report.txt --provider Claude --model claude-3-sonnet-20240229
+
+# Use Perplexity
+python app.py -i report.txt --provider Perplexity --model pplx-7b-online
+
+# Use Ollama local models
+python app.py -i report.txt --provider Ollama --model llama2
 ```
 
 ### Advanced Model Configuration

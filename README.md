@@ -53,7 +53,7 @@ Both options support Docker and local installation.
 
 ### Prerequisites
 
-- **API Key** from one of the supported providers: OpenAI, Gemini, AWS
+- **API Key** from one of the supported providers: OpenAI, Gemini, AWS, Claude, Perplexity, or a local Ollama instance
 
 - **For Docker Setup Only**: [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) installed and running
 - **For Local Setup Only**: Python 3.11+ and pip
@@ -86,6 +86,15 @@ GEMINI_API_KEY=your_gemini_api_key_here
 AWS_ACCESS_KEY_ID=your_aws_access_key
 AWS_SECRET_ACCESS_KEY=your_aws_secret_key
 AWS_REGION=us-east-1
+
+# Claude API Key
+ANTHROPIC_API_KEY=your_claude_api_key
+
+# Perplexity API Key
+PPLX_API_KEY=your_perplexity_api_key
+
+# Optional Ollama base URL
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 > **Note**: You only need to set up one provider, but you may configure multiple APIs if desired. Once configured, you can select models from any of your chosen providers.
@@ -181,7 +190,7 @@ Once the application is running (either via Docker or locally):
    - Docker: `http://localhost:8000`
    - Local: `http://127.0.0.1:7860`
 
-2. **Paste threat intelligence text** into the input area (e.g., security reports, vulnerability descriptions, incident reports)
+2. **Provide input** via direct text, uploading a `.md`/`.pdf` file, or by entering a URL to fetch
 
 3. **Select your preferred AI model** from the dropdown
 

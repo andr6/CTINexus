@@ -2,7 +2,14 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import traceback
+from typing import Optional
+
+import requests
+from pdfminer.high_level import extract_text as pdf_extract_text
+from markdown import markdown
+from bs4 import BeautifulSoup
 
 import gradio as gr
 from cti_processor import PostProcessor, preprocessor
@@ -18,6 +25,38 @@ load_dotenv()
 MODELS = {}
 EMBEDDING_MODELS = {}
 
+
+def read_local_file(file_path: str) -> str:
+    """Read text from txt, md, or pdf files"""
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".pdf":
+        return pdf_extract_text(file_path)
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = f.read()
+    if ext == ".md":
+        html = markdown(data)
+        data = BeautifulSoup(html, "html.parser").get_text()
+    return data
+
+
+def read_from_url(url: str) -> str:
+    """Download content from a URL and return extracted text"""
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    content_type = resp.headers.get("Content-Type", "")
+    if "pdf" in content_type or url.lower().endswith(".pdf"):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(resp.content)
+            tmp_path = tmp.name
+        text = pdf_extract_text(tmp_path)
+        os.unlink(tmp_path)
+        return text
+    if "markdown" in content_type or url.lower().endswith(".md"):
+        html = markdown(resp.text)
+        return BeautifulSoup(html, "html.parser").get_text()
+    if "html" in content_type:
+        return BeautifulSoup(resp.text, "html.parser").get_text()
+    return resp.text
 
 def check_api_key() -> bool:
     """Define Models and check if API KEYS are set"""
@@ -71,6 +110,28 @@ def check_api_key() -> bool:
         EMBEDDING_MODELS["AWS"] = {
             "amazon.titan-embed-text-v2:0": "Titan Embed Text 2 — Large embedding model ($0.12)",
         }
+
+    if os.getenv("ANTHROPIC_API_KEY"):
+        MODELS["Claude"] = {
+            "claude-3-opus-20240229": "Claude 3 Opus — Highest capability",
+            "claude-3-sonnet-20240229": "Claude 3 Sonnet — Balanced model",
+            "claude-3-haiku-20240307": "Claude 3 Haiku — Fast and affordable",
+        }
+        EMBEDDING_MODELS["Claude"] = {}
+
+    if os.getenv("PPLX_API_KEY"):
+        MODELS["Perplexity"] = {
+            "pplx-70b-online": "Perplexity Online 70B",
+            "pplx-7b-online": "Perplexity Online 7B",
+        }
+        EMBEDDING_MODELS["Perplexity"] = {}
+
+    # Ollama does not require an API key
+    MODELS["Ollama"] = {
+        "llama2": "Ollama Llama2",
+        "mixtral": "Ollama Mixtral",
+    }
+    EMBEDDING_MODELS["Ollama"] = {}
 
     return True if MODELS else False
 
@@ -250,6 +311,8 @@ def build_interface(warning: str = None):
                     placeholder="Enter text for processing...",
                     lines=10,
                 )
+                file_input = gr.File(label="Upload .txt, .md or .pdf")
+                url_input = gr.Textbox(label="URL", placeholder="https://example.com/report")
                 gr.Markdown(
                     "**Note:** Intelligence Extraction does best with a reasoning or full gpt model (e.g. o4-mini, gpt-4.1), Entity Tagging tends to need a mid level gpt model (gpt-4o-mini, gpt-4.1-mini).",
                     elem_classes=["note-text"],
@@ -372,7 +435,7 @@ def build_interface(warning: str = None):
             outputs=[results_box, graph_output, metrics_table],
         ).then(
             fn=process_and_visualize,
-            inputs=[text_input, ie_dropdown, et_dropdown, ea_dropdown, lp_dropdown, similarity_slider],
+            inputs=[text_input, file_input, url_input, ie_dropdown, et_dropdown, ea_dropdown, lp_dropdown, similarity_slider],
             outputs=[results_box, graph_output, metrics_table],
         )
 
@@ -404,9 +467,21 @@ def get_embedding_model_choices(provider):
 
 
 def process_and_visualize(
-    text, ie_model, et_model, ea_model, lp_model, similarity_threshold, progress=gr.Progress(track_tqdm=False)
+    text,
+    file_input,
+    url,
+    ie_model,
+    et_model,
+    ea_model,
+    lp_model,
+    similarity_threshold,
+    progress=gr.Progress(track_tqdm=False),
 ):
-    # Run pipeline with progress tracking
+    if file_input is not None:
+        text = read_local_file(file_input.name)
+    elif url:
+        text = read_from_url(url)
+
     result = run_pipeline(text, ie_model, et_model, ea_model, lp_model, similarity_threshold, progress)
     if result.startswith("Error:"):
         return (
@@ -456,12 +531,17 @@ def create_argument_parser():
     input_group.add_argument(
         "--input-file", "-i",
         type=str,
-        help="Path to file containing threat intelligence text"
+        help="Path to file (.txt, .md, .pdf) containing threat intelligence text"
+    )
+    input_group.add_argument(
+        "--url",
+        type=str,
+        help="URL pointing to text, markdown or PDF document"
     )
     parser.add_argument(
         "--provider",
         type=str,
-        help="AI provider to use: OpenAI, Gemini, or AWS (auto-detected if not specified)"
+        help="AI provider to use: OpenAI, Gemini, AWS, Claude, Perplexity, or Ollama (auto-detected if not specified)"
     )
     parser.add_argument(
         "--model",
@@ -521,21 +601,39 @@ def get_default_models_for_provider(provider):
         "AWS": {
             "model": "anthropic.claude-3-5-sonnet",
             "embedding_model": "amazon.titan-embed-text-v2:0"
+        },
+        "Claude": {
+            "model": "claude-3-sonnet-20240229",
+            "embedding_model": None
+        },
+        "Perplexity": {
+            "model": "pplx-7b-online",
+            "embedding_model": None
+        },
+        "Ollama": {
+            "model": "llama2",
+            "embedding_model": None
         }
     }
     return defaults.get(provider, {})
 
 
 def run_cmd_pipeline(args):
+    text: Optional[str] = None
     if args.input_file:
         try:
-            with open(args.input_file, 'r', encoding='utf-8') as f:
-                text = f.read().strip()
+            text = read_local_file(args.input_file).strip()
         except FileNotFoundError:
             print(f"Error: Input file '{args.input_file}' not found")
             sys.exit(1)
         except Exception as e:
             print(f"Error reading input file: {e}")
+            sys.exit(1)
+    elif args.url:
+        try:
+            text = read_from_url(args.url).strip()
+        except Exception as e:
+            print(f"Error fetching URL: {e}")
             sys.exit(1)
     else:
         text = args.text
@@ -597,6 +695,10 @@ def run_cmd_pipeline(args):
             input_basename = os.path.basename(args.input_file)
             base_name = os.path.splitext(input_basename)[0]
             output_file = resolve_path("output", f"{base_name}_output.json")
+        elif args.url:
+            sanitized = os.path.basename(args.url).split("?")[0]
+            base_name = os.path.splitext(sanitized)[0] or "url"
+            output_file = resolve_path("output", f"{base_name}_output.json")
         else:
             output_file = resolve_path("output", "output.json")
         
@@ -624,7 +726,7 @@ def main():
 
     api_keys_available = check_api_key()
 
-    run_gui = not args.text and not args.input_file
+    run_gui = not args.text and not args.input_file and not args.url
     
     if run_gui:
         # GUI mode
