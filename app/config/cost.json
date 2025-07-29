@@ -126,5 +126,12 @@
     "gemini-embedding-001": {
         "input": 0.00000015,
         "output": 0
-    }
+    },
+    "claude-3-opus-20240229": {"input": 0, "output": 0},
+    "claude-3-sonnet-20240229": {"input": 0, "output": 0},
+    "claude-3-haiku-20240307": {"input": 0, "output": 0},
+    "pplx-70b-online": {"input": 0, "output": 0},
+    "pplx-7b-online": {"input": 0, "output": 0},
+    "llama2": {"input": 0, "output": 0},
+    "mixtral": {"input": 0, "output": 0}
 }
